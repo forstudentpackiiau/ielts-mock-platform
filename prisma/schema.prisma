@@ -1,0 +1,240 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =======================
+// ENUMS
+// =======================
+
+enum UserRole {
+  SUPER_ADMIN
+  CENTER_ADMIN
+  TEACHER
+  STUDENT
+}
+
+enum TestSectionType {
+  READING
+  LISTENING
+  WRITING
+}
+
+enum WritingEvaluationSource {
+  AI
+  TEACHER
+}
+
+enum SubmissionStatus {
+  STARTED
+  SUBMITTED
+  EVALUATED
+}
+
+// =======================
+// CORE MODELS
+// =======================
+
+model Center {
+  id          String   @id @default(cuid())
+  name        String
+  isActive    Boolean  @default(true)
+
+  admins      User[]   @relation("CenterAdmins")
+  teachers    User[]   @relation("CenterTeachers")
+  students    User[]   @relation("CenterStudents")
+  users       User[]
+
+  classes     Class[]
+  tests       MockTest[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model User {
+  id          String    @id @default(cuid())
+  centerId    String?
+  email       String    @unique
+  password    String
+  fullName    String
+  role        UserRole
+  isActive    Boolean   @default(true)
+
+  center      Center?   @relation(fields: [centerId], references: [id])
+
+  adminOf     Center[]  @relation("CenterAdmins")
+  teacherOf   Center[]  @relation("CenterTeachers")
+  studentOf   Center[]  @relation("CenterStudents")
+
+  classes     ClassMember[]
+  submissions Submission[]
+  teacherReviews TeacherReview[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// =======================
+// CLASS / GROUP
+// =======================
+
+model Class {
+  id        String  @id @default(cuid())
+  centerId  String
+  name      String
+
+  center    Center  @relation(fields: [centerId], references: [id])
+  members   ClassMember[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ClassMember {
+  id        String   @id @default(cuid())
+  classId   String
+  userId    String
+
+  class     Class    @relation(fields: [classId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([classId, userId])
+}
+
+// =======================
+// MOCK TEST STRUCTURE
+// =======================
+
+model MockTest {
+  id        String  @id @default(cuid())
+  centerId  String
+  title     String
+  isActive  Boolean @default(true)
+
+  center    Center  @relation(fields: [centerId], references: [id])
+  sections  TestSection[]
+  submissions Submission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TestSection {
+  id          String          @id @default(cuid())
+  mockTestId  String
+  type        TestSectionType
+  order       Int
+
+  mockTest    MockTest        @relation(fields: [mockTestId], references: [id])
+  questions   Question[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// =======================
+// QUESTIONS
+// =======================
+
+model Question {
+  id            String   @id @default(cuid())
+  sectionId     String
+  prompt        String
+  correctAnswer String?
+  order         Int
+
+  section       TestSection @relation(fields: [sectionId], references: [id])
+  answers       Answer[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Answer {
+  id          String   @id @default(cuid())
+  questionId  String
+  text        String
+  isCorrect   Boolean @default(false)
+
+  question    Question @relation(fields: [questionId], references: [id])
+
+  createdAt   DateTime @default(now())
+}
+
+// =======================
+// SUBMISSIONS
+// =======================
+
+model Submission {
+  id          String            @id @default(cuid())
+  userId      String
+  mockTestId  String
+  status      SubmissionStatus
+
+  user        User              @relation(fields: [userId], references: [id])
+  mockTest    MockTest          @relation(fields: [mockTestId], references: [id])
+
+  sectionSubmissions SectionSubmission[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, mockTestId])
+}
+
+model SectionSubmission {
+  id            String          @id @default(cuid())
+  submissionId  String
+  sectionType   TestSectionType
+  content       Json
+  score         Float?
+
+  submission    Submission     @relation(fields: [submissionId], references: [id])
+  writingScore  WritingScore?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([submissionId, sectionType])
+}
+
+// =======================
+// WRITING EVALUATION
+// =======================
+
+model WritingScore {
+  id                   String   @id @default(cuid())
+  sectionSubmissionId  String   @unique
+
+  aiBandScore          Float
+  aiFeedback           String
+  aiCachedHash         String
+
+  finalBandScore       Float
+  evaluationSource     WritingEvaluationSource
+
+  sectionSubmission    SectionSubmission @relation(fields: [sectionSubmissionId], references: [id])
+  teacherOverride      TeacherReview?
+
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model TeacherReview {
+  id              String   @id @default(cuid())
+  writingScoreId  String   @unique
+  teacherId       String
+  comment         String
+  overriddenScore Float
+
+  writingScore    WritingScore @relation(fields: [writingScoreId], references: [id])
+  teacher         User         @relation(fields: [teacherId], references: [id])
+
+  createdAt       DateTime @default(now())
+}
